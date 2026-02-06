@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uuid, os, shutil
-from reportlab.pdfgen import canvas
-from PyPDF2 import PdfReader, PdfWriter
+import uuid
+import os
+
+from services.pdf_engine import edit_pdf
 
 app = FastAPI()
 
@@ -14,45 +15,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD = "uploads"
-OUTPUT = "outputs"
-os.makedirs(UPLOAD, exist_ok=True)
-os.makedirs(OUTPUT, exist_ok=True)
+TMP = "tmp"
+os.makedirs(TMP, exist_ok=True)
 
 
-@app.post("/edit-position")
-async def edit_pdf(
+@app.post("/edit")
+async def edit(
     file: UploadFile = File(...),
-    text: str = Form(...),
-    x: float = Form(...),
-    y: float = Form(...),
-    page: int = Form(...)
+    edits: str = Form(...)
 ):
-    file_id = str(uuid.uuid4())
-
-    input_path = f"{UPLOAD}/{file_id}.pdf"
-    overlay_path = f"{UPLOAD}/{file_id}_overlay.pdf"
-    output_path = f"{OUTPUT}/{file_id}.pdf"
+    uid = str(uuid.uuid4())
+    input_path = f"{TMP}/{uid}.pdf"
+    output_path = f"{TMP}/{uid}_out.pdf"
 
     with open(input_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(await file.read())
 
-    reader = PdfReader(input_path)
-    writer = PdfWriter()
+    edit_pdf(input_path, output_path, edits)
 
-    # create overlay
-    c = canvas.Canvas(overlay_path)
-    c.drawString(x, y, text)
-    c.save()
-
-    overlay_pdf = PdfReader(overlay_path)
-
-    for i, p in enumerate(reader.pages):
-        if i == page:
-            p.merge_page(overlay_pdf.pages[0])
-        writer.add_page(p)
-
-    with open(output_path, "wb") as f:
-        writer.write(f)
-
-    return FileResponse(output_path, media_type="application/pdf", filename="edited.pdf")
+    return FileResponse(output_path, filename="edited.pdf")
